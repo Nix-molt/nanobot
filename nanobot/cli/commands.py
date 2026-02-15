@@ -279,21 +279,44 @@ This file stores important information that should persist across sessions.
 
 
 def _make_provider(config):
-    """Create LiteLLMProvider from config. Exits if no API key found."""
+    """Create provider from config.
+
+    Priority:
+    1. If a matching provider has an API key, use LiteLLMProvider.
+    2. If providers.claude_code.enabled (default), try Claude Code CLI OAuth.
+    3. Otherwise, error out with instructions.
+    """
     from nanobot.providers.litellm_provider import LiteLLMProvider
-    p = config.get_provider()
     model = config.agents.defaults.model
-    if not (p and p.api_key) and not model.startswith("bedrock/"):
-        console.print("[red]Error: No API key configured.[/red]")
-        console.print("Set one in ~/.nanobot/config.json under providers section")
-        raise typer.Exit(1)
-    return LiteLLMProvider(
-        api_key=p.api_key if p else None,
-        api_base=config.get_api_base(),
-        default_model=model,
-        extra_headers=p.extra_headers if p else None,
-        provider_name=config.get_provider_name(),
-    )
+
+    p = config.get_provider()
+    if p and p.api_key:
+        return LiteLLMProvider(
+            api_key=p.api_key,
+            api_base=config.get_api_base(),
+            default_model=model,
+            extra_headers=p.extra_headers,
+            provider_name=config.get_provider_name(),
+        )
+
+    # Try Claude Code CLI OAuth token (auto-detect)
+    cc_config = config.providers.claude_code
+    if cc_config.enabled and not model.startswith("bedrock/"):
+        from nanobot.providers.claude_code_auth import get_claude_code_token
+        oauth_token = get_claude_code_token()
+        if oauth_token:
+            from nanobot.providers.claude_code_provider import ClaudeCodeProvider
+            cc_model = cc_config.model or model
+            if "/" in cc_model:
+                cc_model = cc_model.split("/", 1)[1]
+            console.print("[green]✓[/green] Using Claude Code CLI login (no API key needed)")
+            return ClaudeCodeProvider(oauth_token=oauth_token, default_model=cc_model)
+
+    console.print("[red]Error: No API key configured.[/red]")
+    console.print("Either:")
+    console.print("  1. Login with Claude Code CLI first: [cyan]claude[/cyan]")
+    console.print("  2. Or set a key in ~/.nanobot/config.json under providers")
+    raise typer.Exit(1)
 
 
 # ============================================================================

@@ -177,8 +177,19 @@ class ProviderConfig(BaseModel):
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
 
 
+class ClaudeCodeConfig(BaseModel):
+    """Claude Code CLI OAuth authentication.
+
+    When enabled, nanobot auto-detects the Claude Code CLI login
+    and uses its OAuth token — no separate API key needed.
+    """
+    enabled: bool = True  # Auto-detect Claude Code CLI login
+    model: str = ""  # Override model when using Claude Code auth. Empty = use agents.defaults.model
+
+
 class ProvidersConfig(BaseModel):
     """Configuration for LLM providers."""
+    claude_code: ClaudeCodeConfig = Field(default_factory=ClaudeCodeConfig)
     custom: ProviderConfig = Field(default_factory=ProviderConfig)  # Any OpenAI-compatible endpoint
     anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
     openai: ProviderConfig = Field(default_factory=ProviderConfig)
