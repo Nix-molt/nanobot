@@ -18,6 +18,7 @@ fi
 
 # Our patched files
 FILES=(
+    "agent/loop.py"
     "agent/tools/shell.py"
     "agent/tools/filesystem.py"
     "cli/commands.py"
