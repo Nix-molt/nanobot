@@ -213,6 +213,14 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
             
+            # Nudge the model to wrap up when approaching the limit
+            if iteration == self.max_iterations - 3:
+                messages.append({"role": "user", "content": (
+                    f"⚠️ You're at iteration {iteration}/{self.max_iterations}. "
+                    "Start wrapping up — finish what you can and prepare a summary for the user. "
+                    "You have ~3 iterations left."
+                )})
+            
             # Call LLM
             response = await self.provider.chat(
                 messages=messages,
@@ -268,9 +276,20 @@ class AgentLoop:
                     summary = await self.provider.chat(
                         messages=messages, tools=[], model=self.model
                     )
-                    final_content = summary.content or f"Reached {self.max_iterations} iterations without completion."
-                except Exception:
-                    final_content = f"Reached {self.max_iterations} iterations without completion."
+                    final_content = summary.content or None
+                except Exception as e:
+                    logger.error(f"Failed to get iteration-limit summary from model: {e}")
+                    final_content = None
+                
+                # Guarantee a visible message no matter what
+                if not final_content:
+                    tools_summary = ", ".join(dict.fromkeys(tools_used)) if tools_used else "none"
+                    final_content = (
+                        f"⚠️ Hit the {self.max_iterations}-iteration limit.\n"
+                        f"Tools used: {tools_summary}\n"
+                        f"I ran out of iterations before finishing. "
+                        f"Send me a message to continue where I left off."
+                    )
             else:
                 final_content = "I've completed processing but have no response to give."
         
