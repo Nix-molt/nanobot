@@ -5,6 +5,7 @@ so nanobot can use a Claude Max/Pro subscription without a separate API key.
 """
 
 import json
+import os
 from typing import Any
 
 import httpx
@@ -12,7 +13,7 @@ from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_API_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/") + "/v1/messages"
 
 CLAUDE_CODE_HEADERS = {
     "anthropic-version": "2023-06-01",
