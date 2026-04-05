@@ -348,9 +348,13 @@ class TelegramChannel(BaseChannel):
         except Exception as e:
             logger.warning("Failed to register bot commands: {}", e)
 
+        allowed_updates = ["message"]
+        if self.config.inline_buttons:
+            allowed_updates.append("callback_query")
+
         # Start polling (this runs until stopped)
         await self._app.updater.start_polling(
-            allowed_updates=["message"],
+            allowed_updates=allowed_updates,
             drop_pending_updates=False,  # Process pending messages on startup
             error_callback=self._on_polling_error,
         )
