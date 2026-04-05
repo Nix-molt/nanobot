@@ -11,9 +11,9 @@ from typing import Any, Literal
 
 from loguru import logger
 from pydantic import Field
-from telegram import BotCommand, ReactionTypeEmoji, ReplyParameters, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji, ReplyParameters, Update
 from telegram.error import BadRequest, NetworkError, TimedOut
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
 from nanobot.bus.events import OutboundMessage
@@ -190,6 +190,7 @@ class TelegramConfig(Base):
     connection_pool_size: int = 32
     pool_timeout: float = 5.0
     streaming: bool = True
+    inline_buttons: bool = False
 
 
 class TelegramChannel(BaseChannel):
@@ -324,6 +325,10 @@ class TelegramChannel(BaseChannel):
                 self._on_message
             )
         )
+
+        # Handle inline button callbacks
+        if self.config.inline_buttons:
+            self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
 
         logger.info("Starting Telegram bot (polling mode)...")
 
@@ -471,10 +476,22 @@ class TelegramChannel(BaseChannel):
         # Send text content
         if msg.content and msg.content != "[empty message]":
             render_as_blockquote = bool(msg.metadata.get("_tool_hint"))
-            for chunk in split_message(msg.content, TELEGRAM_MAX_MESSAGE_LEN):
+            # Build inline keyboard if enabled and buttons provided
+            reply_markup = None
+            if self.config.inline_buttons and msg.buttons:
+                keyboard = [
+                    [InlineKeyboardButton(label, callback_data=label) for label in row]
+                    for row in msg.buttons
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+            chunks = split_message(msg.content, TELEGRAM_MAX_MESSAGE_LEN)
+            for i, chunk in enumerate(chunks):
+                # Attach keyboard only to the last chunk
+                markup = reply_markup if i == len(chunks) - 1 else None
                 await self._send_text(
                     chat_id, chunk, reply_params, thread_kwargs,
                     render_as_blockquote=render_as_blockquote,
+                    reply_markup=markup,
                 )
 
     async def _call_with_retry(self, fn, *args, **kwargs):
@@ -510,6 +527,7 @@ class TelegramChannel(BaseChannel):
         reply_params=None,
         thread_kwargs: dict | None = None,
         render_as_blockquote: bool = False,
+        reply_markup: InlineKeyboardMarkup | None = None,
     ) -> None:
         """Send a plain text message with HTML fallback."""
         try:
@@ -518,6 +536,7 @@ class TelegramChannel(BaseChannel):
                 self._app.bot.send_message,
                 chat_id=chat_id, text=html, parse_mode="HTML",
                 reply_parameters=reply_params,
+                reply_markup=reply_markup,
                 **(thread_kwargs or {}),
             )
         except Exception as e:
@@ -528,6 +547,7 @@ class TelegramChannel(BaseChannel):
                     chat_id=chat_id,
                     text=text,
                     reply_parameters=reply_params,
+                    reply_markup=reply_markup,
                     **(thread_kwargs or {}),
                 )
             except Exception as e2:
@@ -952,6 +972,42 @@ class TelegramChannel(BaseChannel):
             )
         finally:
             self._media_group_tasks.pop(key, None)
+
+    async def _on_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle inline keyboard button taps — route button label as a user message."""
+        if not update.callback_query or not update.effective_user:
+            return
+
+        query = update.callback_query
+        user = update.effective_user
+        chat_id = query.message.chat_id if query.message else None
+        sender_id = self._sender_id(user)
+
+        if not chat_id:
+            return
+
+        button_label = query.data or ""
+
+        # Acknowledge the tap and remove the keyboard
+        await query.answer()
+        if query.message:
+            try:
+                await query.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+
+        logger.debug("Inline button tap from {}: {}", sender_id, button_label)
+
+        self._start_typing(str(chat_id))
+        await self._handle_message(
+            sender_id=sender_id,
+            chat_id=str(chat_id),
+            content=button_label,
+            metadata={
+                "is_callback": True,
+                "button_label": button_label,
+            },
+        )
 
     def _start_typing(self, chat_id: str) -> None:
         """Start sending 'typing...' indicator for a chat."""

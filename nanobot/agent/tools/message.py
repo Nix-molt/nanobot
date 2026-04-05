@@ -16,6 +16,10 @@ from nanobot.bus.events import OutboundMessage
             StringSchema(""),
             description="Optional: list of file paths to attach (images, audio, documents)",
         ),
+        buttons=ArraySchema(
+            ArraySchema(StringSchema("")),
+            description="Optional: inline keyboard buttons. List of rows, each row is a list of button label strings. When a button is tapped, its label is sent back as a user message. Only supported on Telegram.",
+        ),
         required=["content"],
     )
 )
@@ -69,6 +73,7 @@ class MessageTool(Tool):
         chat_id: str | None = None,
         message_id: str | None = None,
         media: list[str] | None = None,
+        buttons: list[list[str]] | None = None,
         **kwargs: Any
     ) -> str:
         from nanobot.utils.helpers import strip_think
@@ -100,6 +105,7 @@ class MessageTool(Tool):
             metadata={
                 "message_id": message_id,
             } if message_id else {},
+            buttons=buttons or [],
         )
 
         try:
@@ -107,6 +113,7 @@ class MessageTool(Tool):
             if channel == self._default_channel and chat_id == self._default_chat_id:
                 self._sent_in_turn = True
             media_info = f" with {len(media)} attachments" if media else ""
-            return f"Message sent to {channel}:{chat_id}{media_info}"
+            buttons_info = f" with {sum(len(r) for r in (buttons or []))} buttons" if buttons else ""
+            return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}"
         except Exception as e:
             return f"Error sending message: {str(e)}"
