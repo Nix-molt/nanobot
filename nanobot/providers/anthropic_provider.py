@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import httpx
 import os
 import re
 import secrets
@@ -50,6 +51,7 @@ class AnthropicProvider(LLMProvider):
             client_kw["default_headers"] = extra_headers
         # Keep retries centralized in LLMProvider._run_with_retry to avoid retry amplification.
         client_kw["max_retries"] = 0
+        client_kw["timeout"] = httpx.Timeout(connect=10.0, read=120.0, write=60.0, pool=60.0)
         self._client = AsyncAnthropic(**client_kw)
 
     @staticmethod
